@@ -1,27 +1,88 @@
 import type { BeadColor, CellData, PixelGrid, ColorCount } from '../types'
 
-// ── 色差计算 ──────────────────────────────────────
+// ── CIE Lab 色彩空间转换 ──────────────────────────
 
-/** RGB 欧氏距离 */
-function colorDistance(a: [number, number, number], b: [number, number, number]): number {
-  const dr = a[0] - b[0]
-  const dg = a[1] - b[1]
-  const db = a[2] - b[2]
-  return Math.sqrt(dr * dr + dg * dg + db * db)
+/**
+ * sRGB → CIE Lab (D65 标准光源)
+ * Lab 是感知均匀色彩空间，欧氏距离比 RGB 空间更接近人眼感受
+ */
+function rgbToLab(rgb: [number, number, number]): [number, number, number] {
+  // Step 1: sRGB → Linear RGB
+  const toLinear = (c: number): number => {
+    const v = c / 255
+    return v > 0.04045 ? Math.pow((v + 0.055) / 1.055, 2.4) : v / 12.92
+  }
+  const r = toLinear(rgb[0])
+  const g = toLinear(rgb[1])
+  const b_ = toLinear(rgb[2])
+
+  // Step 2: Linear RGB → XYZ (D65)
+  const x = r * 0.4124564 + g * 0.3575761 + b_ * 0.1804375
+  const y = r * 0.2126729 + g * 0.7151522 + b_ * 0.0721750
+  const z = r * 0.0193339 + g * 0.1191920 + b_ * 0.9503041
+
+  // Step 3: XYZ → Lab (D65 reference white)
+  const refX = 0.95047; const refY = 1.00000; const refZ = 1.08883
+  const f = (t: number): number =>
+    t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116
+
+  const L = 116 * f(y / refY) - 16
+  const a = 500 * (f(x / refX) - f(y / refY))
+  const b = 200 * (f(y / refY) - f(z / refZ))
+
+  return [L, a, b]
 }
 
-/** 在色板中查找最近似颜色（RGB 欧氏距离） */
+/** 色板 Lab 值缓存 */
+let _labCache: [number, number, number][] | null = null
+let _labCacheKey = ''
+
+function getPaletteLab(palette: BeadColor[]): [number, number, number][] {
+  const key = palette.map((c) => c.code).join(',')
+  if (key !== _labCacheKey) {
+    _labCache = palette.map((c) => rgbToLab(c.rgb))
+    _labCacheKey = key
+  }
+  return _labCache!
+}
+
+// ── 色差计算 ──────────────────────────────────────
+
+/** Lab 空间欧氏距离（CIE76，感知均匀） */
+function colorDistance(a: [number, number, number], b: [number, number, number]): number {
+  const la = rgbToLab(a)
+  const lb = rgbToLab(b)
+  const dl = la[0] - lb[0]
+  const da = la[1] - lb[1]
+  const db = la[2] - lb[2]
+  return Math.sqrt(dl * dl + da * da + db * db)
+}
+
+/** Lab 空间欧氏距离（直接传入 Lab 值，避免重复转换） */
+function labDistance(
+  lab: [number, number, number],
+  lab2: [number, number, number]
+): number {
+  const dl = lab[0] - lab2[0]
+  const da = lab[1] - lab2[1]
+  const db = lab[2] - lab2[2]
+  return Math.sqrt(dl * dl + da * da + db * db)
+}
+
+/** 在色板中查找最近似颜色（Lab 欧氏距离） */
 export function findNearestColor(rgb: [number, number, number], palette: BeadColor[]): BeadColor {
-  let best = palette[0]
+  const lab = rgbToLab(rgb)
+  const paletteLab = getPaletteLab(palette)
+  let bestIdx = 0
   let bestDist = Infinity
-  for (const c of palette) {
-    const d = colorDistance(rgb, c.rgb)
+  for (let i = 0; i < paletteLab.length; i++) {
+    const d = labDistance(lab, paletteLab[i])
     if (d < bestDist) {
       bestDist = d
-      best = c
+      bestIdx = i
     }
   }
-  return best
+  return palette[bestIdx]
 }
 
 function clamp(v: number): number {
