@@ -22,7 +22,7 @@ export default function App() {
   // 预览参数
   const [gridSize, setGridSize] = useState(2500)
   const [pixelSize, setPixelSize] = useState(12)
-  const [similarityThreshold, setSimilarityThreshold] = useState(50)
+  const [similarityThreshold, setSimilarityThreshold] = useState(5)
   const [selectedPalette, setSelectedPalette] = useState<PaletteKey>('perler')
   const [showColorCodes, setShowColorCodes] = useState(false)
   const [useDithering, setUseDithering] = useState(false)

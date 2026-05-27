@@ -119,7 +119,7 @@ export default function ControlPanel({
         <input
           type="range"
           min={0}
-          max={120}
+          max={30}
           value={similarityThreshold}
           onChange={(e) => onSimilarityThresholdChange(Number(e.target.value))}
           className="w-full mt-1"

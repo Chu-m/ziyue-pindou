@@ -96,16 +96,16 @@ function extractDominantColor(
   imageData: ImageData,
   startX: number,
   startY: number,
-  cellW: number,
-  cellH: number,
+  endX: number,
+  endY: number,
   imgW: number
 ): [number, number, number] {
   const rgbCounts = new Map<string, number>()
   let maxCount = 0
   let dominant: [number, number, number] = [255, 255, 255]
 
-  for (let y = startY; y < startY + cellH && y < imageData.height; y++) {
-    for (let x = startX; x < startX + cellW && x < imageData.width; x++) {
+  for (let y = startY; y < endY && y < imageData.height; y++) {
+    for (let x = startX; x < endX && x < imageData.width; x++) {
       const idx = (y * imgW + x) * 4
       const r = imageData.data[idx]
       const g = imageData.data[idx + 1]
@@ -139,18 +139,17 @@ function pixelateImage(
   gridHeight: number,
   palette: BeadColor[],
   useDithering: boolean
-): { cells: CellData[][]; cellW: number; cellH: number } {
-  const cellW = Math.floor(imageData.width / gridWidth)
-  const cellH = Math.floor(imageData.height / gridHeight)
-
-  // Step 1: 每格提取主导色（原始图片，无抖动干扰）
+): { cells: CellData[][] } {
+  // Step 1: 每格按比例提取主导色（消除整数除法裁剪）
   const rawRgb: ([number, number, number] | null)[][] = []
   for (let gy = 0; gy < gridHeight; gy++) {
     const row: ([number, number, number] | null)[] = []
-    const startY = gy * cellH
+    const startY = Math.round((gy * imageData.height) / gridHeight)
+    const endY = Math.round(((gy + 1) * imageData.height) / gridHeight)
     for (let gx = 0; gx < gridWidth; gx++) {
-      const startX = gx * cellW
-      row.push(extractDominantColor(imageData, startX, startY, cellW, cellH, imageData.width))
+      const startX = Math.round((gx * imageData.width) / gridWidth)
+      const endX = Math.round(((gx + 1) * imageData.width) / gridWidth)
+      row.push(extractDominantColor(imageData, startX, startY, endX, endY, imageData.width))
     }
     rawRgb.push(row)
   }
@@ -211,7 +210,7 @@ function pixelateImage(
     cells.push(row)
   }
 
-  return { cells, cellW, cellH }
+  return { cells }
 }
 
 // ── Flood Fill 背景移除 ───────────────────────────
