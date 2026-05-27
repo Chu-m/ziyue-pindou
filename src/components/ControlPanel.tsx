@@ -17,6 +17,8 @@ interface Props {
   onGridLineOptsChange: (opts: GridLineOptions) => void
   showColorCodes: boolean
   onShowColorCodesChange: (v: boolean) => void
+  useDithering: boolean
+  onUseDitheringChange: (v: boolean) => void
   exportShowGridLines: boolean
   onExportShowGridLinesChange: (v: boolean) => void
   exportShowColorCodes: boolean
@@ -47,6 +49,8 @@ export default function ControlPanel({
   onGridLineOptsChange,
   showColorCodes,
   onShowColorCodesChange,
+  useDithering,
+  onUseDitheringChange,
   exportShowGridLines,
   onExportShowGridLinesChange,
   exportShowColorCodes,
@@ -121,6 +125,20 @@ export default function ControlPanel({
           className="w-full mt-1"
         />
         <p className="text-xs text-gray-400 mt-0.5">值越大合并越多杂色</p>
+      </div>
+
+      {/* 抖动算法 */}
+      <div className="border-t border-gray-100 pt-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useDithering}
+            onChange={(e) => onUseDitheringChange(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          <span className="text-xs text-gray-500">Floyd-Steinberg 抖动</span>
+        </label>
+        <p className="text-xs text-gray-400 mt-0.5 ml-6">保留渐变和纹理，提升颜色还原度</p>
       </div>
 
       {/* 预览显示 */}

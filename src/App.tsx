@@ -25,6 +25,7 @@ export default function App() {
   const [similarityThreshold, setSimilarityThreshold] = useState(50)
   const [selectedPalette, setSelectedPalette] = useState<PaletteKey>('perler')
   const [showColorCodes, setShowColorCodes] = useState(false)
+  const [useDithering, setUseDithering] = useState(true)
   const [gridLineOpts, setGridLineOpts] = useState<GridLineOptions>({
     showGridLines: true,
     gridCols: 5,
@@ -40,12 +41,12 @@ export default function App() {
   const currentPalette: BeadColor[] = colorPalettes[selectedPalette].colors
 
   const runPipeline = useCallback(
-    (img: HTMLImageElement, gs: number, palette: BeadColor[], threshold: number) => {
+    (img: HTMLImageElement, gs: number, palette: BeadColor[], threshold: number, dither: boolean) => {
       setProcessing(true)
       requestAnimationFrame(() => {
         try {
           const { imageData } = getImageData(img)
-          const result = processImage(imageData, gs, palette, threshold)
+          const result = processImage(imageData, gs, palette, threshold, { useDithering: dither })
           setGrid(result.grid)
           setColorCounts(result.colorCounts)
         } finally {
@@ -59,20 +60,21 @@ export default function App() {
   const handleImageLoaded = useCallback(
     (img: HTMLImageElement) => {
       setOriginalImg(img)
-      runPipeline(img, gridSize, currentPalette, similarityThreshold)
+      runPipeline(img, gridSize, currentPalette, similarityThreshold, useDithering)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [gridSize, selectedPalette, similarityThreshold]
+    [gridSize, selectedPalette, similarityThreshold, useDithering]
   )
 
   const handleParamChange = useCallback(
-    (newGridSize: number, newPalette: PaletteKey, newThreshold: number) => {
+    (newGridSize: number, newPalette: PaletteKey, newThreshold: number, dither: boolean) => {
       setGridSize(newGridSize)
       setSelectedPalette(newPalette)
       setSimilarityThreshold(newThreshold)
+      setUseDithering(dither)
       if (originalImg) {
         const palette = colorPalettes[newPalette].colors
-        runPipeline(originalImg, newGridSize, palette, newThreshold)
+        runPipeline(originalImg, newGridSize, palette, newThreshold, dither)
       }
     },
     [originalImg, runPipeline]
@@ -143,15 +145,15 @@ export default function App() {
             <div className="lg:w-64 shrink-0">
               <ControlPanel
                 gridSize={gridSize}
-                onGridSizeChange={(v) => handleParamChange(v, selectedPalette, similarityThreshold)}
+                onGridSizeChange={(v) => handleParamChange(v, selectedPalette, similarityThreshold, useDithering)}
                 pixelSize={pixelSize}
                 onPixelSizeChange={setPixelSize}
                 similarityThreshold={similarityThreshold}
                 onSimilarityThresholdChange={(v) =>
-                  handleParamChange(gridSize, selectedPalette, v)
+                  handleParamChange(gridSize, selectedPalette, v, useDithering)
                 }
                 selectedPalette={selectedPalette}
-                onPaletteChange={(v) => handleParamChange(gridSize, v, similarityThreshold)}
+                onPaletteChange={(v) => handleParamChange(gridSize, v, similarityThreshold, useDithering)}
                 onExport={handleExport}
                 hasResult={!!grid}
                 processing={processing}
@@ -159,6 +161,8 @@ export default function App() {
                 onGridLineOptsChange={setGridLineOpts}
                 showColorCodes={showColorCodes}
                 onShowColorCodesChange={setShowColorCodes}
+                useDithering={useDithering}
+                onUseDitheringChange={(v) => handleParamChange(gridSize, selectedPalette, similarityThreshold, v)}
                 exportShowGridLines={exportShowGridLines}
                 onExportShowGridLinesChange={setExportShowGridLines}
                 exportShowColorCodes={exportShowColorCodes}
