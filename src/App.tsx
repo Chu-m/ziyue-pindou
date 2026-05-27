@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef } from 'react'
 import type { BeadColor, PixelGrid, ColorCount } from './types'
-import type { GridLineOptions } from './utils/imageProcessor'
+import type { GridLineOptions, ExportOptions } from './utils/imageProcessor'
 import { colorPalettes } from './data/colors'
 import { getImageData } from './utils/imageLoader'
-import { processImage, renderAnnotatedGrid } from './utils/imageProcessor'
+import { processImage, renderExportGrid } from './utils/imageProcessor'
 import { downloadPNG } from './utils/export'
 import ImageUploader from './components/ImageUploader'
 import PixelPreview from './components/PixelPreview'
@@ -19,11 +19,12 @@ export default function App() {
   const [processing, setProcessing] = useState(false)
   const exportCanvasRef = useRef<HTMLCanvasElement>(null)
 
-  // 参数
+  // 预览参数
   const [gridSize, setGridSize] = useState(2500)
   const [pixelSize, setPixelSize] = useState(12)
   const [similarityThreshold, setSimilarityThreshold] = useState(50)
   const [selectedPalette, setSelectedPalette] = useState<PaletteKey>('perler')
+  const [showColorCodes, setShowColorCodes] = useState(false)
   const [gridLineOpts, setGridLineOpts] = useState<GridLineOptions>({
     showGridLines: true,
     gridCols: 5,
@@ -31,6 +32,10 @@ export default function App() {
     lineWidth: 2,
     lineColor: '#000000',
   })
+
+  // 导出选项
+  const [exportShowGridLines, setExportShowGridLines] = useState(true)
+  const [exportShowColorCodes, setExportShowColorCodes] = useState(true)
 
   const currentPalette: BeadColor[] = colorPalettes[selectedPalette].colors
 
@@ -43,11 +48,6 @@ export default function App() {
           const result = processImage(imageData, gs, palette, threshold)
           setGrid(result.grid)
           setColorCounts(result.colorCounts)
-          requestAnimationFrame(() => {
-            if (exportCanvasRef.current) {
-              renderAnnotatedGrid(result.grid, exportCanvasRef.current, 24)
-            }
-          })
         } finally {
           setProcessing(false)
         }
@@ -79,10 +79,18 @@ export default function App() {
   )
 
   const handleExport = useCallback(() => {
-    if (exportCanvasRef.current) {
-      downloadPNG(exportCanvasRef.current, 'ziyue-pindou-blueprint.png')
+    if (!grid || !exportCanvasRef.current) return
+    const exportOpts: ExportOptions = {
+      showGridLines: exportShowGridLines,
+      showColorCodes: exportShowColorCodes,
+      gridLineOpts: gridLineOpts,
     }
-  }, [])
+    renderExportGrid(grid, exportCanvasRef.current, 24, exportOpts)
+    // requestAnimationFrame 确保渲染完成后再导出
+    requestAnimationFrame(() => {
+      downloadPNG(exportCanvasRef.current!, 'ziyue-pindou-blueprint.png')
+    })
+  }, [grid, exportShowGridLines, exportShowColorCodes, gridLineOpts])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -101,7 +109,6 @@ export default function App() {
         {originalImg && (
           <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1 min-w-0 space-y-4">
-              {/* 原图预览 */}
               <div className="bg-white border border-gray-200 rounded-lg p-2">
                 <p className="text-xs text-gray-400 mb-2">原图</p>
                 <img
@@ -111,11 +118,11 @@ export default function App() {
                 />
               </div>
 
-              {/* 像素结果 */}
               <PixelPreview
                 grid={grid}
                 pixelSize={pixelSize}
                 gridLineOpts={gridLineOpts}
+                showColorCodes={showColorCodes}
               />
 
               {colorCounts.length > 0 && (
@@ -150,6 +157,12 @@ export default function App() {
                 processing={processing}
                 gridLineOpts={gridLineOpts}
                 onGridLineOptsChange={setGridLineOpts}
+                showColorCodes={showColorCodes}
+                onShowColorCodesChange={setShowColorCodes}
+                exportShowGridLines={exportShowGridLines}
+                onExportShowGridLinesChange={setExportShowGridLines}
+                exportShowColorCodes={exportShowColorCodes}
+                onExportShowColorCodesChange={setExportShowColorCodes}
               />
             </div>
           </div>

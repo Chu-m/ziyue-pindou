@@ -281,12 +281,14 @@ export function renderGridToCanvas(
   grid: PixelGrid,
   canvas: HTMLCanvasElement,
   pixelSize: number,
-  gridLineOpts?: GridLineOptions
+  gridLineOpts?: GridLineOptions,
+  showColorCodes?: boolean
 ): void {
   const { gridWidth, gridHeight, cells } = grid
   canvas.width = gridWidth * pixelSize
   canvas.height = gridHeight * pixelSize
   const ctx = canvas.getContext('2d')!
+  const fontSize = Math.max(7, pixelSize * 0.35)
 
   for (let y = 0; y < gridHeight; y++) {
     for (let x = 0; x < gridWidth; x++) {
@@ -298,6 +300,20 @@ export function renderGridToCanvas(
       ctx.strokeStyle = 'rgba(0,0,0,0.12)'
       ctx.lineWidth = 0.3
       ctx.strokeRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
+
+      // 色号标注
+      if (showColorCodes && pixelSize >= 16) {
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000
+        ctx.fillStyle = brightness > 128 ? '#000' : '#fff'
+        ctx.font = `${fontSize}px monospace`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(
+          cells[y][x].beadCode,
+          x * pixelSize + pixelSize / 2,
+          y * pixelSize + pixelSize / 2
+        )
+      }
     }
   }
 
@@ -310,7 +326,6 @@ export function renderGridToCanvas(
     ctx.strokeStyle = lineColor
     ctx.lineWidth = lineWidth
 
-    // 纵向粗线
     for (let c = colInterval; c < gridWidth; c += colInterval) {
       ctx.beginPath()
       ctx.moveTo(c * pixelSize, 0)
@@ -318,7 +333,6 @@ export function renderGridToCanvas(
       ctx.stroke()
     }
 
-    // 横向粗线
     for (let r = rowInterval; r < gridHeight; r += rowInterval) {
       ctx.beginPath()
       ctx.moveTo(0, r * pixelSize)
@@ -328,11 +342,18 @@ export function renderGridToCanvas(
   }
 }
 
-/** 渲染带色号标注的网格到 Canvas（用于导出） */
-export function renderAnnotatedGrid(
+export interface ExportOptions {
+  showGridLines: boolean
+  showColorCodes: boolean
+  gridLineOpts?: GridLineOptions
+}
+
+/** 渲染导出图纸到 Canvas（支持自定义网格线和色号） */
+export function renderExportGrid(
   grid: PixelGrid,
   canvas: HTMLCanvasElement,
-  pixelSize: number
+  pixelSize: number,
+  options: ExportOptions
 ): void {
   const { gridWidth, gridHeight, cells } = grid
   const fontSize = Math.max(8, pixelSize * 0.3)
@@ -346,12 +367,15 @@ export function renderAnnotatedGrid(
       ctx.fillStyle = `rgb(${r},${g},${b})`
       ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
 
-      ctx.strokeStyle = 'rgba(0,0,0,0.2)'
-      ctx.lineWidth = 0.5
-      ctx.strokeRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
+      // 每格细网格线
+      if (options.showGridLines) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)'
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
+      }
 
-      // 标注色号（仅在像素足够大时）
-      if (pixelSize >= 20) {
+      // 色号标注
+      if (options.showColorCodes && pixelSize >= 18) {
         const brightness = (r * 299 + g * 587 + b * 114) / 1000
         ctx.fillStyle = brightness > 128 ? '#000' : '#fff'
         ctx.font = `${fontSize}px monospace`
@@ -363,6 +387,29 @@ export function renderAnnotatedGrid(
           y * pixelSize + pixelSize / 2
         )
       }
+    }
+  }
+
+  // 粗网格分割线
+  if (options.gridLineOpts?.showGridLines) {
+    const { gridCols, gridRows, lineWidth, lineColor } = options.gridLineOpts
+    const colInterval = Math.max(1, Math.round(gridWidth / gridCols))
+    const rowInterval = Math.max(1, Math.round(gridHeight / gridRows))
+
+    ctx.strokeStyle = lineColor
+    ctx.lineWidth = lineWidth
+
+    for (let c = colInterval; c < gridWidth; c += colInterval) {
+      ctx.beginPath()
+      ctx.moveTo(c * pixelSize, 0)
+      ctx.lineTo(c * pixelSize, gridHeight * pixelSize)
+      ctx.stroke()
+    }
+    for (let r = rowInterval; r < gridHeight; r += rowInterval) {
+      ctx.beginPath()
+      ctx.moveTo(0, r * pixelSize)
+      ctx.lineTo(gridWidth * pixelSize, r * pixelSize)
+      ctx.stroke()
     }
   }
 }

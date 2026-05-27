@@ -6,15 +6,16 @@ interface Props {
   grid: PixelGrid | null
   pixelSize: number
   gridLineOpts: GridLineOptions
+  showColorCodes: boolean
 }
 
-export default function PixelPreview({ grid, pixelSize, gridLineOpts }: Props) {
+export default function PixelPreview({ grid, pixelSize, gridLineOpts, showColorCodes }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     if (!grid || !canvasRef.current) return
-    renderGridToCanvas(grid, canvasRef.current, pixelSize, gridLineOpts)
-  }, [grid, pixelSize, gridLineOpts])
+    renderGridToCanvas(grid, canvasRef.current, pixelSize, gridLineOpts, showColorCodes)
+  }, [grid, pixelSize, gridLineOpts, showColorCodes])
 
   if (!grid) return null
 

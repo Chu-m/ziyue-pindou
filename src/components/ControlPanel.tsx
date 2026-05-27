@@ -15,6 +15,12 @@ interface Props {
   processing: boolean
   gridLineOpts: GridLineOptions
   onGridLineOptsChange: (opts: GridLineOptions) => void
+  showColorCodes: boolean
+  onShowColorCodesChange: (v: boolean) => void
+  exportShowGridLines: boolean
+  onExportShowGridLinesChange: (v: boolean) => void
+  exportShowColorCodes: boolean
+  onExportShowColorCodesChange: (v: boolean) => void
 }
 
 const gridSizePresets = [
@@ -39,6 +45,12 @@ export default function ControlPanel({
   processing,
   gridLineOpts,
   onGridLineOptsChange,
+  showColorCodes,
+  onShowColorCodesChange,
+  exportShowGridLines,
+  onExportShowGridLinesChange,
+  exportShowColorCodes,
+  onExportShowColorCodesChange,
 }: Props) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
@@ -111,6 +123,21 @@ export default function ControlPanel({
         <p className="text-xs text-gray-400 mt-0.5">值越大合并越多杂色</p>
       </div>
 
+      {/* 预览显示 */}
+      <div className="border-t border-gray-100 pt-4">
+        <h4 className="text-xs font-medium text-gray-500 mb-2">预览显示</h4>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showColorCodes}
+            onChange={(e) => onShowColorCodesChange(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          <span className="text-xs text-gray-500">显示色号标注</span>
+        </label>
+        <p className="text-xs text-gray-400 mt-0.5 ml-6">像素 ≥16px 时生效</p>
+      </div>
+
       {/* 网格分割线 */}
       <div className="border-t border-gray-100 pt-4">
         <label className="flex items-center gap-2 cursor-pointer">
@@ -122,14 +149,14 @@ export default function ControlPanel({
             }
             className="rounded border-gray-300"
           />
-          <span className="text-xs text-gray-500">显示粗网格分割线</span>
+          <span className="text-xs text-gray-500">粗网格分割线</span>
         </label>
 
         {gridLineOpts.showGridLines && (
           <div className="mt-3 space-y-3">
             <div>
               <label className="text-xs text-gray-500">
-                纵向分割：{gridLineOpts.gridCols} 列
+                纵向：{gridLineOpts.gridCols} 列
               </label>
               <input
                 type="range"
@@ -144,7 +171,7 @@ export default function ControlPanel({
             </div>
             <div>
               <label className="text-xs text-gray-500">
-                横向分割：{gridLineOpts.gridRows} 行
+                横向：{gridLineOpts.gridRows} 行
               </label>
               <input
                 type="range"
@@ -158,9 +185,7 @@ export default function ControlPanel({
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">
-                分割线颜色
-              </label>
+              <label className="text-xs text-gray-500">颜色</label>
               <input
                 type="color"
                 value={gridLineOpts.lineColor}
@@ -172,7 +197,7 @@ export default function ControlPanel({
             </div>
             <div>
               <label className="text-xs text-gray-500">
-                分割线粗细：{gridLineOpts.lineWidth}px
+                粗细：{gridLineOpts.lineWidth}px
               </label>
               <input
                 type="range"
@@ -187,6 +212,29 @@ export default function ControlPanel({
             </div>
           </div>
         )}
+      </div>
+
+      {/* 导出选项 */}
+      <div className="border-t border-gray-100 pt-4">
+        <h4 className="text-xs font-medium text-gray-500 mb-2">导出选项</h4>
+        <label className="flex items-center gap-2 cursor-pointer mb-2">
+          <input
+            type="checkbox"
+            checked={exportShowGridLines}
+            onChange={(e) => onExportShowGridLinesChange(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          <span className="text-xs text-gray-500">导出含网格线</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={exportShowColorCodes}
+            onChange={(e) => onExportShowColorCodesChange(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          <span className="text-xs text-gray-500">导出含色号标注</span>
+        </label>
       </div>
 
       {/* 导出按钮 */}
