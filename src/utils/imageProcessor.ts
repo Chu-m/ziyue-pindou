@@ -34,73 +34,11 @@ export function findNearestColor(rgb: [number, number, number], palette: BeadCol
   return palette[idx]
 }
 
-// ── Floyd-Steinberg 像素级抖动 ────────────────────
-
-/**
- * 对整张图片应用 Floyd-Steinberg 抖动，将每个像素映射到最近似拼豆色
- * 误差扩散到相邻像素，在有限色板下保留渐变和纹理
- */
-function ditherImage(imageData: ImageData, palette: BeadColor[]): ImageData {
-  const { data, width, height } = imageData
-  const result = new Uint8ClampedArray(data)
-  const paletteObjs = getPaletteObjs(palette)
-  const paletteRgb = palette.map((c) => c.rgb)
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4
-
-      // 当前像素 RGB（含累积误差）
-      const r = clamp(result[idx])
-      const g = clamp(result[idx + 1])
-      const b = clamp(result[idx + 2])
-      const a = result[idx + 3]
-
-      // 透明像素跳过
-      if (a < 128) continue
-
-      // CIEDE2000 找最近拼豆色
-      const nearest = closest({ R: r, G: g, B: b }, paletteObjs)
-      const nearestIdx = paletteObjs.indexOf(nearest)
-
-      // 量化误差
-      const nearestRgb = paletteRgb[nearestIdx]
-      const errR = r - nearestRgb[0]
-      const errG = g - nearestRgb[1]
-      const errB = b - nearestRgb[2]
-
-      // 写入量化后颜色
-      result[idx] = nearestRgb[0]
-      result[idx + 1] = nearestRgb[1]
-      result[idx + 2] = nearestRgb[2]
-
-      // Floyd-Steinberg 误差扩散
-      const distribute = (dx: number, dy: number, factor: number) => {
-        const nx = x + dx
-        const ny = y + dy
-        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-          const nidx = (ny * width + nx) * 4
-          result[nidx] = clamp(result[nidx] + errR * factor)
-          result[nidx + 1] = clamp(result[nidx + 1] + errG * factor)
-          result[nidx + 2] = clamp(result[nidx + 2] + errB * factor)
-        }
-      }
-
-      distribute(1, 0, 7 / 16)   // 右
-      distribute(-1, 1, 3 / 16)  // 左下
-      distribute(0, 1, 5 / 16)   // 下
-      distribute(1, 1, 1 / 16)   // 右下
-    }
-  }
-
-  return new ImageData(result, width, height)
-}
-
 function clamp(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)))
 }
 
-// ── 主导色提取 + 像素化 ──────────────────────────
+// ── 主导色提取 + 像素化（含格子级 Floyd-Steinberg 抖动） ──
 
 /** 主导色提取：区域内出现频率最高的 RGB（跳过透明像素） */
 function extractDominantColor(
@@ -139,28 +77,85 @@ function extractDominantColor(
   return dominant
 }
 
-/** 图片网格化 + 颜色映射 */
+/**
+ * 图片网格化 + 颜色映射
+ * 抖动方案：先在每格取主导色，再在格子级别做 Floyd-Steinberg 误差扩散，
+ * 补偿因色板受限导致的整体颜色偏移，避免像素级抖动引入的噪点。
+ */
 function pixelateImage(
   imageData: ImageData,
   gridWidth: number,
   gridHeight: number,
-  palette: BeadColor[]
+  palette: BeadColor[],
+  useDithering: boolean
 ): { cells: CellData[][]; cellW: number; cellH: number } {
   const cellW = Math.floor(imageData.width / gridWidth)
   const cellH = Math.floor(imageData.height / gridHeight)
 
-  const cells: CellData[][] = []
-
+  // Step 1: 每格提取主导色（原始图片，无抖动干扰）
+  const rawRgb: ([number, number, number] | null)[][] = []
   for (let gy = 0; gy < gridHeight; gy++) {
-    const row: CellData[] = []
+    const row: ([number, number, number] | null)[] = []
     const startY = gy * cellH
-
     for (let gx = 0; gx < gridWidth; gx++) {
       const startX = gx * cellW
-      const rgb = extractDominantColor(imageData, startX, startY, cellW, cellH, imageData.width)
-      // 抖动后的图中每个像素已经是拼豆色板颜色，所以直接取主导色即得到该格子的拼豆色号
-      const nearest = findNearestColor(rgb, palette)
+      row.push(extractDominantColor(imageData, startX, startY, cellW, cellH, imageData.width))
+    }
+    rawRgb.push(row)
+  }
+
+  // Step 2: 格子级 Floyd-Steinberg 抖动 + 颜色映射
+  // 误差在相邻格子之间扩散，保持整体色调均衡
+  const cells: CellData[][] = []
+
+  // 误差缓冲区（每个格子累积的 RGB 误差）
+  const errBuf: ([number, number, number] | null)[][] = Array.from(
+    { length: gridHeight },
+    () => Array(gridWidth).fill(null) as ([number, number, number] | null)[]
+  )
+
+  for (let y = 0; y < gridHeight; y++) {
+    const row: CellData[] = []
+    for (let x = 0; x < gridWidth; x++) {
+      const raw = rawRgb[y][x]!
+      const err = errBuf[y][x]
+
+      // 加累积误差
+      let r = raw[0], g = raw[1], b = raw[2]
+      if (useDithering && err) {
+        r = clamp(r + err[0])
+        g = clamp(g + err[1])
+        b = clamp(b + err[2])
+      }
+
+      // CIEDE2000 映射到最近拼豆色
+      const nearest = findNearestColor([r, g, b], palette)
       row.push({ beadCode: nearest.code, rgb: nearest.rgb })
+
+      // 计算量化误差并扩散给相邻格子
+      if (useDithering) {
+        const errR_ = r - nearest.rgb[0]
+        const errG_ = g - nearest.rgb[1]
+        const errB_ = b - nearest.rgb[2]
+
+        const addErr = (dx: number, dy: number, factor: number) => {
+          const nx = x + dx; const ny = y + dy
+          if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) return
+          const existing = errBuf[ny][nx]
+          if (existing) {
+            existing[0] += errR_ * factor
+            existing[1] += errG_ * factor
+            existing[2] += errB_ * factor
+          } else {
+            errBuf[ny][nx] = [errR_ * factor, errG_ * factor, errB_ * factor]
+          }
+        }
+
+        addErr(1, 0, 7 / 16)   // 右
+        addErr(-1, 1, 3 / 16)  // 左下
+        addErr(0, 1, 5 / 16)   // 下
+        addErr(1, 1, 1 / 16)   // 右下
+      }
     }
     cells.push(row)
   }
@@ -297,11 +292,8 @@ export function processImage(
   const gridHeight = Math.round(Math.sqrt(gridSize / aspectRatio))
   const gridWidth = Math.round(gridHeight * aspectRatio)
 
-  // Step 1: Floyd-Steinberg 像素级抖动（可选）
-  const processedData = options.useDithering ? ditherImage(imageData, palette) : imageData
-
-  // Step 2: 像素化 + 颜色映射
-  const { cells } = pixelateImage(processedData, gridWidth, gridHeight, palette)
+  // Step 1: 像素化 + 颜色映射（内含格子级 Floyd-Steinberg 抖动）
+  const { cells } = pixelateImage(imageData, gridWidth, gridHeight, palette, options.useDithering)
 
   // Step 3: 区域合并
   const merged = mergeSimilarRegions(cells, similarityThreshold, palette)
