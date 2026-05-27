@@ -1,37 +1,27 @@
-import { closest, diff as cieDiff, rgb_to_lab } from 'color-diff'
 import type { BeadColor, CellData, PixelGrid, ColorCount } from '../types'
 
 // ── 色差计算 ──────────────────────────────────────
 
-/** 颜色数组 → color-diff 对象格式 */
-function toColorObj(rgb: [number, number, number]) {
-  return { R: rgb[0], G: rgb[1], B: rgb[2] }
+/** RGB 欧氏距离 */
+function colorDistance(a: [number, number, number], b: [number, number, number]): number {
+  const dr = a[0] - b[0]
+  const dg = a[1] - b[1]
+  const db = a[2] - b[2]
+  return Math.sqrt(dr * dr + dg * dg + db * db)
 }
 
-/** 色板转换为 color-diff 对象数组（缓存以提升性能） */
-let _paletteCache: ReturnType<typeof toColorObj>[] | null = null
-let _paletteCacheKey = ''
-
-function getPaletteObjs(palette: BeadColor[]) {
-  const key = palette.map((c) => c.code).join(',')
-  if (key !== _paletteCacheKey) {
-    _paletteCache = palette.map((c) => ({ R: c.rgb[0], G: c.rgb[1], B: c.rgb[2] }))
-    _paletteCacheKey = key
-  }
-  return _paletteCache!
-}
-
-/** CIEDE2000 感知色差距离 */
-function perceptualDistance(a: [number, number, number], b: [number, number, number]): number {
-  return cieDiff(rgb_to_lab(toColorObj(a)), rgb_to_lab(toColorObj(b)))
-}
-
-/** 在色板中查找最近似颜色（CIEDE2000） */
+/** 在色板中查找最近似颜色（RGB 欧氏距离） */
 export function findNearestColor(rgb: [number, number, number], palette: BeadColor[]): BeadColor {
-  const objs = getPaletteObjs(palette)
-  const result = closest(toColorObj(rgb), objs)
-  const idx = objs.indexOf(result)
-  return palette[idx]
+  let best = palette[0]
+  let bestDist = Infinity
+  for (const c of palette) {
+    const d = colorDistance(rgb, c.rgb)
+    if (d < bestDist) {
+      bestDist = d
+      best = c
+    }
+  }
+  return best
 }
 
 function clamp(v: number): number {
@@ -226,7 +216,7 @@ export function mergeSimilarRegions(
         for (const [dx, dy] of dirs) {
           const nx = cx + dx; const ny = cy + dy
           if (nx < 0 || nx >= w || ny < 0 || ny >= h || visited[ny][nx]) continue
-          const dist = perceptualDistance(cells[cy][cx].rgb, cells[ny][nx].rgb)
+          const dist = colorDistance(cells[cy][cx].rgb, cells[ny][nx].rgb)
           if (dist < threshold) {
             visited[ny][nx] = true; queue.push([nx, ny])
           }
