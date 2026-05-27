@@ -1,19 +1,20 @@
 import { useEffect, useRef } from 'react'
 import type { PixelGrid } from '../types'
-import { renderGridToCanvas } from '../utils/imageProcessor'
+import { renderGridToCanvas, type GridLineOptions } from '../utils/imageProcessor'
 
 interface Props {
   grid: PixelGrid | null
   pixelSize: number
+  gridLineOpts: GridLineOptions
 }
 
-export default function PixelPreview({ grid, pixelSize }: Props) {
+export default function PixelPreview({ grid, pixelSize, gridLineOpts }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     if (!grid || !canvasRef.current) return
-    renderGridToCanvas(grid, canvasRef.current, pixelSize)
-  }, [grid, pixelSize])
+    renderGridToCanvas(grid, canvasRef.current, pixelSize, gridLineOpts)
+  }, [grid, pixelSize, gridLineOpts])
 
   if (!grid) return null
 

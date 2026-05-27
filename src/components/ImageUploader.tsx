@@ -15,10 +15,10 @@ export default function ImageUploader({ onImageLoaded, disabled }: Props) {
       const url = URL.createObjectURL(file)
       const img = new Image()
       img.onload = () => {
-        URL.revokeObjectURL(url)
         onImageLoaded(img)
       }
       img.src = url
+      // 不在此处 revoke URL，父组件需要 img.src 展示原图
     },
     [onImageLoaded]
   )

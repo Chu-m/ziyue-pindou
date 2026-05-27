@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概况
 
-**子悦拼豆** — 图片转拼豆像素图纸的纯前端 Web 工具。用户上传图片后，自动进行网格化采样、主导色提取、拼豆色板映射，生成像素网格图纸并支持 PNG 导出。
+**紫悦拼豆** — 图片转拼豆像素图纸的纯前端 Web 工具。用户上传图片后，自动进行网格化采样、主导色提取、拼豆色板映射，生成像素网格图纸并支持 PNG 导出。
 
 ## 技术栈
 

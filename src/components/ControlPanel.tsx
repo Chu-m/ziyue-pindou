@@ -1,4 +1,5 @@
 import { colorPalettes } from '../data/colors'
+import type { GridLineOptions } from '../utils/imageProcessor'
 
 interface Props {
   gridSize: number
@@ -12,6 +13,8 @@ interface Props {
   onExport: () => void
   hasResult: boolean
   processing: boolean
+  gridLineOpts: GridLineOptions
+  onGridLineOptsChange: (opts: GridLineOptions) => void
 }
 
 const gridSizePresets = [
@@ -34,6 +37,8 @@ export default function ControlPanel({
   onExport,
   hasResult,
   processing,
+  gridLineOpts,
+  onGridLineOptsChange,
 }: Props) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
@@ -83,7 +88,7 @@ export default function ControlPanel({
         <input
           type="range"
           min={4}
-          max={30}
+          max={24}
           value={pixelSize}
           onChange={(e) => onPixelSizeChange(Number(e.target.value))}
           className="w-full mt-1"
@@ -104,6 +109,84 @@ export default function ControlPanel({
           className="w-full mt-1"
         />
         <p className="text-xs text-gray-400 mt-0.5">值越大合并越多杂色</p>
+      </div>
+
+      {/* 网格分割线 */}
+      <div className="border-t border-gray-100 pt-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={gridLineOpts.showGridLines}
+            onChange={(e) =>
+              onGridLineOptsChange({ ...gridLineOpts, showGridLines: e.target.checked })
+            }
+            className="rounded border-gray-300"
+          />
+          <span className="text-xs text-gray-500">显示粗网格分割线</span>
+        </label>
+
+        {gridLineOpts.showGridLines && (
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="text-xs text-gray-500">
+                纵向分割：{gridLineOpts.gridCols} 列
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                value={gridLineOpts.gridCols}
+                onChange={(e) =>
+                  onGridLineOptsChange({ ...gridLineOpts, gridCols: Number(e.target.value) })
+                }
+                className="w-full mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">
+                横向分割：{gridLineOpts.gridRows} 行
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                value={gridLineOpts.gridRows}
+                onChange={(e) =>
+                  onGridLineOptsChange({ ...gridLineOpts, gridRows: Number(e.target.value) })
+                }
+                className="w-full mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">
+                分割线颜色
+              </label>
+              <input
+                type="color"
+                value={gridLineOpts.lineColor}
+                onChange={(e) =>
+                  onGridLineOptsChange({ ...gridLineOpts, lineColor: e.target.value })
+                }
+                className="w-full mt-1 h-8 rounded border border-gray-300"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">
+                分割线粗细：{gridLineOpts.lineWidth}px
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={6}
+                value={gridLineOpts.lineWidth}
+                onChange={(e) =>
+                  onGridLineOptsChange({ ...gridLineOpts, lineWidth: Number(e.target.value) })
+                }
+                className="w-full mt-1"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 导出按钮 */}

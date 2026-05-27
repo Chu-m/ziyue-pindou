@@ -268,11 +268,20 @@ export function processImage(
   }
 }
 
+export interface GridLineOptions {
+  showGridLines: boolean
+  gridCols: number   // 纵向切割成几列
+  gridRows: number   // 横向切割成几行
+  lineWidth: number
+  lineColor: string
+}
+
 /** 渲染像素网格到 Canvas */
 export function renderGridToCanvas(
   grid: PixelGrid,
   canvas: HTMLCanvasElement,
-  pixelSize: number
+  pixelSize: number,
+  gridLineOpts?: GridLineOptions
 ): void {
   const { gridWidth, gridHeight, cells } = grid
   canvas.width = gridWidth * pixelSize
@@ -285,10 +294,36 @@ export function renderGridToCanvas(
       ctx.fillStyle = `rgb(${r},${g},${b})`
       ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
 
-      // 画网格线
-      ctx.strokeStyle = 'rgba(0,0,0,0.15)'
-      ctx.lineWidth = 0.5
+      // 细网格线（每格）
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'
+      ctx.lineWidth = 0.3
       ctx.strokeRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize)
+    }
+  }
+
+  // 粗网格分割线（自定义行列数）
+  if (gridLineOpts?.showGridLines) {
+    const { gridCols, gridRows, lineWidth, lineColor } = gridLineOpts
+    const colInterval = Math.max(1, Math.round(gridWidth / gridCols))
+    const rowInterval = Math.max(1, Math.round(gridHeight / gridRows))
+
+    ctx.strokeStyle = lineColor
+    ctx.lineWidth = lineWidth
+
+    // 纵向粗线
+    for (let c = colInterval; c < gridWidth; c += colInterval) {
+      ctx.beginPath()
+      ctx.moveTo(c * pixelSize, 0)
+      ctx.lineTo(c * pixelSize, gridHeight * pixelSize)
+      ctx.stroke()
+    }
+
+    // 横向粗线
+    for (let r = rowInterval; r < gridHeight; r += rowInterval) {
+      ctx.beginPath()
+      ctx.moveTo(0, r * pixelSize)
+      ctx.lineTo(gridWidth * pixelSize, r * pixelSize)
+      ctx.stroke()
     }
   }
 }
