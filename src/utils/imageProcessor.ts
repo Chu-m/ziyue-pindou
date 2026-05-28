@@ -90,6 +90,39 @@ function clamp(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)))
 }
 
+// ── 投票合并表（消除近似色投票碎片化） ──────────
+
+/** 感知合并阈值：OKLab 距离 < 此值的色号合并计票，约 2 JND */
+const VOTE_MERGE_THRESHOLD = 0.020
+
+let _mergeMap: Int16Array | null = null
+let _mergeMapKey = ''
+
+/** 构建色号投票合并映射：同组近似色的票归入代表色号 */
+function buildConsolidationMap(palette: BeadColor[]): Int16Array {
+  const key = palette.map((c) => c.code).join(',')
+  if (key === _mergeMapKey && _mergeMap) return _mergeMap
+
+  const paletteOklab = getPaletteOklab(palette)
+  const n = palette.length
+  const map = new Int16Array(n)
+  for (let i = 0; i < n; i++) map[i] = i
+
+  for (let i = 0; i < n; i++) {
+    if (map[i] !== i) continue
+    for (let j = i + 1; j < n; j++) {
+      if (map[j] !== j) continue
+      if (oklabDistance(paletteOklab[i], paletteOklab[j]) < VOTE_MERGE_THRESHOLD) {
+        map[j] = i
+      }
+    }
+  }
+
+  _mergeMap = map
+  _mergeMapKey = key
+  return map
+}
+
 // ── 64³ RGB → 色板查找表 ──────────────────────────
 
 const LUT_BITS = 6
@@ -146,11 +179,12 @@ function pixelateImage(
   useDithering: boolean
 ): { cells: CellData[][] } {
   const lut = buildBeadLut(palette)
+  const mergeMap = buildConsolidationMap(palette)
   const imgW = imageData.width
   const imgH = imageData.height
   const shift = 8 - LUT_BITS
 
-  // Step 1: 每格统计色号投票 + 累积平均 RGB
+  // Step 1: 每格统计色号投票（含近似色合并） + 累积平均 RGB
   interface CellVote {
     beadIdx: number
     beadCode: string
@@ -185,22 +219,28 @@ function pixelateImage(
           const g = imageData.data[idx + 1]
           const b = imageData.data[idx + 2]
 
-          // 累计平均 RGB（用于后续抖动误差计算）
           sumR += r; sumG += g; sumB += b
           pxCount++
 
-          // LUT 查找 → 投票
           const lutIdx = ((r >> shift) << 12) | ((g >> shift) << 6) | (b >> shift)
           votes[lut[lutIdx]]++
         }
       }
 
-      // 得票最多的色号
+      // 合并感知近似色的投票（消除色板冗余导致的碎片化）
+      const mergedVotes = new Uint32Array(palette.length)
+      for (let i = 0; i < votes.length; i++) {
+        if (votes[i] > 0) {
+          mergedVotes[mergeMap[i]] += votes[i]
+        }
+      }
+
+      // 从合并后的票数中找最高票
       let bestBeadIdx = 0
       let bestVotes = 0
-      for (let i = 0; i < votes.length; i++) {
-        if (votes[i] > bestVotes) {
-          bestVotes = votes[i]
+      for (let i = 0; i < mergedVotes.length; i++) {
+        if (mergedVotes[i] > bestVotes) {
+          bestVotes = mergedVotes[i]
           bestBeadIdx = i
         }
       }
