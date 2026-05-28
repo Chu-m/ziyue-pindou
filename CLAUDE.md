@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 构建 | Vite 8 |
 | 样式 | Tailwind CSS 4 |
 | 图像处理 | 浏览器原生 Canvas API |
-| 部署 | 静态文件，Vercel/Netlify 均可 |
+| 部署 | Cloudflare Pages (wrangler CLI) |
 
 ## 常用命令
 
@@ -25,6 +25,29 @@ npm run build        # 类型检查 + 生产构建
 npm run preview      # 预览生产构建
 npx tsc -b --noEmit  # 仅类型检查
 ```
+
+## 部署流程
+
+项目部署在 Cloudflare Pages，使用 wrangler CLI 推送。账号已认证（ID: `fce50c7ed53d046725b092b347bc6ce2`），项目名 `ziyue-pindou`。
+
+### 一键部署命令
+
+```bash
+npm run build && npx wrangler pages deploy dist --project-name ziyue-pindou
+```
+
+### 部署步骤说明
+
+1. `npm run build` — 类型检查 + Vite 生产构建，产物输出到 `dist/`
+2. `npx wrangler pages deploy dist --project-name ziyue-pindou` — 推送 `dist/` 到 Cloudflare Pages
+
+部署完成后 wrangler 会输出预览 URL（如 `https://<hash>.ziyue-pindou.pages.dev`），自定义域名由 Cloudflare 控制台管理。
+
+### Git 提交规范
+
+- 提交风格：`<type>: <中文描述>`（如 `feat:`、`fix:`、`revert:`）
+- 仓库：`https://github.com/Chu-m/ziyue-pindou`
+- 当前分支：`master`
 
 ## 项目架构
 
@@ -48,7 +71,7 @@ src/
 
 1. **图片加载** → Canvas `drawImage()` + `getImageData()`
 2. **网格化采样** → 按 cell 提取 **主导色**（区域内出现频率最高的 RGB），避免均值池化的灰边问题
-3. **颜色映射** → RGB 空间 **欧氏距离** 最近邻匹配到拼豆色板
+3. **颜色映射** → OKLab 空间 **欧氏距离** 最近邻匹配到拼豆色板（感知均匀性优于 CIE Lab）
 4. **BFS 区域合并** → 连通域内相似颜色合并为同色号，消除杂色噪点
 5. **Flood Fill 背景移除** → 从边界开始标记连续背景区域（可选，当前未默认启用）
 6. **导出** → Canvas `toBlob()` 生成 PNG 图纸
