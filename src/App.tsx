@@ -25,7 +25,7 @@ export default function App() {
   const [similarityThreshold, setSimilarityThreshold] = useState(5)
   const [selectedPalette, setSelectedPalette] = useState<PaletteKey>('perler')
   const [showColorCodes, setShowColorCodes] = useState(false)
-  const [useDithering, setUseDithering] = useState(false)
+  const [useDithering, setUseDithering] = useState(true)
   const [gridLineOpts, setGridLineOpts] = useState<GridLineOptions>({
     showGridLines: true,
     gridCols: 5,

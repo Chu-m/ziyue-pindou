@@ -90,49 +90,53 @@ function clamp(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)))
 }
 
-// ── 主导色提取 + 像素化（含格子级 Floyd-Steinberg 抖动） ──
+// ── 64³ RGB → 色板查找表 ──────────────────────────
 
-/** 主导色提取：区域内出现频率最高的 RGB（跳过透明像素） */
-function extractDominantColor(
-  imageData: ImageData,
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-  imgW: number
-): [number, number, number] {
-  const rgbCounts = new Map<string, number>()
-  let maxCount = 0
-  let dominant: [number, number, number] = [255, 255, 255]
+const LUT_BITS = 6
+const LUT_DIM = 1 << LUT_BITS // 64
+const LUT_SIZE = LUT_DIM * LUT_DIM * LUT_DIM // 262,144
 
-  for (let y = startY; y < endY && y < imageData.height; y++) {
-    for (let x = startX; x < endX && x < imageData.width; x++) {
-      const idx = (y * imgW + x) * 4
-      const r = imageData.data[idx]
-      const g = imageData.data[idx + 1]
-      const b = imageData.data[idx + 2]
-      const a = imageData.data[idx + 3]
+let _beadLut: Uint16Array | null = null
+let _beadLutKey = ''
 
-      if (a < 128) continue
+/** 构建量化的 RGB(6bit/ch) → 色板索引 查找表 */
+function buildBeadLut(palette: BeadColor[]): Uint16Array {
+  const key = palette.map((c) => c.code).join(',')
+  if (key === _beadLutKey && _beadLut) return _beadLut
 
-      const key = `${r},${g},${b}`
-      const count = (rgbCounts.get(key) || 0) + 1
-      rgbCounts.set(key, count)
+  const lut = new Uint16Array(LUT_SIZE)
+  const shift = 8 - LUT_BITS
+  const paletteOklab = getPaletteOklab(palette)
 
-      if (count > maxCount) {
-        maxCount = count
-        dominant = [r, g, b]
+  for (let r6 = 0; r6 < LUT_DIM; r6++) {
+    const r8 = (r6 << shift) + (1 << (shift - 1))
+    for (let g6 = 0; g6 < LUT_DIM; g6++) {
+      const g8 = (g6 << shift) + (1 << (shift - 1))
+      for (let b6 = 0; b6 < LUT_DIM; b6++) {
+        const b8 = (b6 << shift) + (1 << (shift - 1))
+        const oklab = rgbToOklab([r8, g8, b8])
+        let bestIdx = 0, bestDist = Infinity
+        for (let i = 0; i < paletteOklab.length; i++) {
+          const d = oklabDistance(oklab, paletteOklab[i])
+          if (d < bestDist) { bestDist = d; bestIdx = i }
+        }
+        lut[(r6 << 12) | (g6 << 6) | b6] = bestIdx
       }
     }
   }
 
-  return dominant
+  _beadLut = lut
+  _beadLutKey = key
+  return lut
 }
 
+// ── 像素化（量化-投票 + 格子级 Floyd-Steinberg 抖动） ──
+
 /**
- * 图片网格化 + 颜色映射
- * 抖动方案：先在每格取主导色，再在格子级别做 Floyd-Steinberg 误差扩散，
- * 补偿因色板受限导致的整体颜色偏移，避免像素级抖动引入的噪点。
+ * 图片网格化 + 颜色映射。
+ * 策略：先将每个像素通过 LUT 映射到拼豆色（量化），
+ * 然后在格内按色号投票选出“得票最多”的色号。
+ * 相比精确 RGB 频次统计，能避免照片中微小色差导致的碎片化投票。
  */
 function pixelateImage(
   imageData: ImageData,
@@ -141,25 +145,81 @@ function pixelateImage(
   palette: BeadColor[],
   useDithering: boolean
 ): { cells: CellData[][] } {
-  // Step 1: 每格按比例提取主导色（消除整数除法裁剪）
-  const rawRgb: ([number, number, number] | null)[][] = []
-  for (let gy = 0; gy < gridHeight; gy++) {
-    const row: ([number, number, number] | null)[] = []
-    const startY = Math.round((gy * imageData.height) / gridHeight)
-    const endY = Math.round(((gy + 1) * imageData.height) / gridHeight)
-    for (let gx = 0; gx < gridWidth; gx++) {
-      const startX = Math.round((gx * imageData.width) / gridWidth)
-      const endX = Math.round(((gx + 1) * imageData.width) / gridWidth)
-      row.push(extractDominantColor(imageData, startX, startY, endX, endY, imageData.width))
-    }
-    rawRgb.push(row)
+  const lut = buildBeadLut(palette)
+  const imgW = imageData.width
+  const imgH = imageData.height
+  const shift = 8 - LUT_BITS
+
+  // Step 1: 每格统计色号投票 + 累积平均 RGB
+  interface CellVote {
+    beadIdx: number
+    beadCode: string
+    rgb: [number, number, number]
+    avgR: number
+    avgG: number
+    avgB: number
   }
 
-  // Step 2: 格子级 Floyd-Steinberg 抖动 + 颜色映射
-  // 误差在相邻格子之间扩散，保持整体色调均衡
-  const cells: CellData[][] = []
+  const cellResults: CellVote[][] = []
 
-  // 误差缓冲区（每个格子累积的 RGB 误差）
+  for (let gy = 0; gy < gridHeight; gy++) {
+    const row: CellVote[] = []
+    const startY = Math.round((gy * imgH) / gridHeight)
+    const endY = Math.round(((gy + 1) * imgH) / gridHeight)
+
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const startX = Math.round((gx * imgW) / gridWidth)
+      const endX = Math.round(((gx + 1) * imgW) / gridWidth)
+
+      // 色号票数统计
+      const votes = new Uint32Array(palette.length)
+      let sumR = 0, sumG = 0, sumB = 0, pxCount = 0
+
+      for (let py = startY; py < endY && py < imgH; py++) {
+        for (let px = startX; px < endX && px < imgW; px++) {
+          const idx = (py * imgW + px) * 4
+          const a = imageData.data[idx + 3]
+          if (a < 128) continue
+
+          const r = imageData.data[idx]
+          const g = imageData.data[idx + 1]
+          const b = imageData.data[idx + 2]
+
+          // 累计平均 RGB（用于后续抖动误差计算）
+          sumR += r; sumG += g; sumB += b
+          pxCount++
+
+          // LUT 查找 → 投票
+          const lutIdx = ((r >> shift) << 12) | ((g >> shift) << 6) | (b >> shift)
+          votes[lut[lutIdx]]++
+        }
+      }
+
+      // 得票最多的色号
+      let bestBeadIdx = 0
+      let bestVotes = 0
+      for (let i = 0; i < votes.length; i++) {
+        if (votes[i] > bestVotes) {
+          bestVotes = votes[i]
+          bestBeadIdx = i
+        }
+      }
+
+      const bead = palette[bestBeadIdx]
+      row.push({
+        beadIdx: bestBeadIdx,
+        beadCode: bead.code,
+        rgb: bead.rgb,
+        avgR: pxCount > 0 ? sumR / pxCount : 255,
+        avgG: pxCount > 0 ? sumG / pxCount : 255,
+        avgB: pxCount > 0 ? sumB / pxCount : 255,
+      })
+    }
+    cellResults.push(row)
+  }
+
+  // Step 2: 格子级 Floyd-Steinberg 误差扩散
+  const cells: CellData[][] = []
   const errBuf: ([number, number, number] | null)[][] = Array.from(
     { length: gridHeight },
     () => Array(gridWidth).fill(null) as ([number, number, number] | null)[]
@@ -168,44 +228,44 @@ function pixelateImage(
   for (let y = 0; y < gridHeight; y++) {
     const row: CellData[] = []
     for (let x = 0; x < gridWidth; x++) {
-      const raw = rawRgb[y][x]!
+      const vote = cellResults[y][x]
       const err = errBuf[y][x]
 
-      // 加累积误差
-      let r = raw[0], g = raw[1], b = raw[2]
+      // 以格内平均 RGB + 累积误差 作为输入
+      let r = vote.avgR, g = vote.avgG, b = vote.avgB
       if (useDithering && err) {
         r = clamp(r + err[0])
         g = clamp(g + err[1])
         b = clamp(b + err[2])
       }
 
-      // OKLab 映射到最近拼豆色
-      const nearest = findNearestColor([r, g, b], palette)
+      // OKLab 映射到最近拼豆色（抖动改变映射结果）
+      const nearest = useDithering ? findNearestColor([r, g, b], palette) : palette[vote.beadIdx]
       row.push({ beadCode: nearest.code, rgb: nearest.rgb })
 
-      // 计算量化误差并扩散给相邻格子
+      // 计算量化误差并扩散
       if (useDithering) {
-        const errR_ = r - nearest.rgb[0]
-        const errG_ = g - nearest.rgb[1]
-        const errB_ = b - nearest.rgb[2]
+        const errR = r - nearest.rgb[0]
+        const errG = g - nearest.rgb[1]
+        const errB = b - nearest.rgb[2]
 
         const addErr = (dx: number, dy: number, factor: number) => {
           const nx = x + dx; const ny = y + dy
           if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) return
           const existing = errBuf[ny][nx]
           if (existing) {
-            existing[0] += errR_ * factor
-            existing[1] += errG_ * factor
-            existing[2] += errB_ * factor
+            existing[0] += errR * factor
+            existing[1] += errG * factor
+            existing[2] += errB * factor
           } else {
-            errBuf[ny][nx] = [errR_ * factor, errG_ * factor, errB_ * factor]
+            errBuf[ny][nx] = [errR * factor, errG * factor, errB * factor]
           }
         }
 
-        addErr(1, 0, 7 / 16)   // 右
-        addErr(-1, 1, 3 / 16)  // 左下
-        addErr(0, 1, 5 / 16)   // 下
-        addErr(1, 1, 1 / 16)   // 右下
+        addErr(1, 0, 7 / 16)
+        addErr(-1, 1, 3 / 16)
+        addErr(0, 1, 5 / 16)
+        addErr(1, 1, 1 / 16)
       }
     }
     cells.push(row)
@@ -252,6 +312,12 @@ export function removeBackground(
 
 // ── BFS 连通域颜色合并 ────────────────────────────
 
+/**
+ * OKLab 距离到 UI 阈值的换算系数。
+ * OKLab 值域约 0~0.8，乘以 200 后与旧 CIE Lab 阈值（0-30）的量级对齐。
+ */
+const OKLAB_THRESHOLD_SCALE = 200
+
 export function mergeSimilarRegions(
   cells: CellData[][],
   threshold: number,
@@ -262,6 +328,9 @@ export function mergeSimilarRegions(
   const visited: boolean[][] = Array.from({ length: h }, () => Array(w).fill(false))
   const result: CellData[][] = cells.map((row) => row.map((cell) => ({ ...cell })))
   const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]]
+
+  // 换算 UI 阈值到 OKLab 尺度
+  const oklabThreshold = threshold / OKLAB_THRESHOLD_SCALE
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -278,7 +347,7 @@ export function mergeSimilarRegions(
           const nx = cx + dx; const ny = cy + dy
           if (nx < 0 || nx >= w || ny < 0 || ny >= h || visited[ny][nx]) continue
           const dist = colorDistance(cells[cy][cx].rgb, cells[ny][nx].rgb)
-          if (dist < threshold) {
+          if (dist < oklabThreshold) {
             visited[ny][nx] = true; queue.push([nx, ny])
           }
         }
