@@ -8,6 +8,8 @@ export interface BeadColor {
 export interface CellData {
   beadCode: string
   rgb: [number, number, number]
+  /** 格内像素的平均 RGB，用于合并决策（非渲染） */
+  meanRgb: [number, number, number]
 }
 
 export interface PixelGrid {

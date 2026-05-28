@@ -90,6 +90,49 @@ function clamp(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)))
 }
 
+// ── 图像预处理 ────────────────────────────────────
+
+/**
+ * 自动对比度拉伸 + 饱和度增强，提升后续颜色量化区分度。
+ * 对低对比度/发灰的照片效果明显。
+ */
+function preprocessImageData(imageData: ImageData): void {
+  const data = imageData.data
+  const len = data.length
+
+  // Pass 1: 找各通道 min/max + 亮度统计
+  let minR = 255, maxR = 0, minG = 255, maxG = 0, minB = 255, maxB = 0
+  for (let i = 0; i < len; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2]
+    if (r < minR) minR = r; if (r > maxR) maxR = r
+    if (g < minG) minG = g; if (g > maxG) maxG = g
+    if (b < minB) minB = b; if (b > maxB) maxB = b
+  }
+
+  // Pass 2: 对比度拉伸 + 饱和度增强
+  const rRange = maxR - minR || 1
+  const gRange = maxG - minG || 1
+  const bRange = maxB - minB || 1
+  const saturationBoost = 1.25
+
+  for (let i = 0; i < len; i += 4) {
+    // 对比度拉伸到 0-255
+    let r = ((data[i] - minR) / rRange) * 255
+    let g = ((data[i + 1] - minG) / gRange) * 255
+    let b = ((data[i + 2] - minB) / bRange) * 255
+
+    // 饱和度增强
+    const lum = r * 0.299 + g * 0.587 + b * 0.114
+    r = lum + (r - lum) * saturationBoost
+    g = lum + (g - lum) * saturationBoost
+    b = lum + (b - lum) * saturationBoost
+
+    data[i] = clamp(r)
+    data[i + 1] = clamp(g)
+    data[i + 2] = clamp(b)
+  }
+}
+
 // ── 投票合并表（消除近似色投票碎片化） ──────────
 
 /** 感知合并阈值：OKLab 距离 < 此值的色号合并计票，约 2 JND */
@@ -178,20 +221,23 @@ function pixelateImage(
   palette: BeadColor[],
   useDithering: boolean
 ): { cells: CellData[][] } {
+  // 预处理：提升对比度和饱和度，增强颜色区分度
+  preprocessImageData(imageData)
+
   const lut = buildBeadLut(palette)
   const mergeMap = buildConsolidationMap(palette)
   const imgW = imageData.width
   const imgH = imageData.height
   const shift = 8 - LUT_BITS
 
-  // Step 1: 每格统计色号投票（含近似色合并） + 累积平均 RGB
+  // Step 1: 每格统计色号投票（含近似色合并） + 累积平均 RGB + 置信度
   interface CellVote {
     beadIdx: number
     beadCode: string
     rgb: [number, number, number]
-    avgR: number
-    avgG: number
-    avgB: number
+    meanRgb: [number, number, number]
+    /** 得票率 0-1，用于抖动阶段的置信度加权 */
+    confidence: number
   }
 
   const cellResults: CellVote[][] = []
@@ -246,13 +292,14 @@ function pixelateImage(
       }
 
       const bead = palette[bestBeadIdx]
+      const pixelCount = pxCount > 0 ? pxCount : 1
+      const confidence = bestVotes / pixelCount
       row.push({
         beadIdx: bestBeadIdx,
         beadCode: bead.code,
         rgb: bead.rgb,
-        avgR: pxCount > 0 ? sumR / pxCount : 255,
-        avgG: pxCount > 0 ? sumG / pxCount : 255,
-        avgB: pxCount > 0 ? sumB / pxCount : 255,
+        meanRgb: [sumR / pixelCount, sumG / pixelCount, sumB / pixelCount],
+        confidence,
       })
     }
     cellResults.push(row)
@@ -271,8 +318,12 @@ function pixelateImage(
       const vote = cellResults[y][x]
       const err = errBuf[y][x]
 
-      // 以格内平均 RGB + 累积误差 作为输入
-      let r = vote.avgR, g = vote.avgG, b = vote.avgB
+      // 置信度加权混合：高置信度信任投票结果，低置信度参考均值
+      const c = vote.confidence
+      let r = vote.rgb[0] * c + vote.meanRgb[0] * (1 - c)
+      let g = vote.rgb[1] * c + vote.meanRgb[1] * (1 - c)
+      let b = vote.rgb[2] * c + vote.meanRgb[2] * (1 - c)
+
       if (useDithering && err) {
         r = clamp(r + err[0])
         g = clamp(g + err[1])
@@ -281,7 +332,11 @@ function pixelateImage(
 
       // OKLab 映射到最近拼豆色（抖动改变映射结果）
       const nearest = useDithering ? findNearestColor([r, g, b], palette) : palette[vote.beadIdx]
-      row.push({ beadCode: nearest.code, rgb: nearest.rgb })
+      row.push({
+        beadCode: nearest.code,
+        rgb: nearest.rgb,
+        meanRgb: vote.meanRgb,
+      })
 
       // 计算量化误差并扩散
       if (useDithering) {
@@ -386,7 +441,9 @@ export function mergeSimilarRegions(
         for (const [dx, dy] of dirs) {
           const nx = cx + dx; const ny = cy + dy
           if (nx < 0 || nx >= w || ny < 0 || ny >= h || visited[ny][nx]) continue
-          const dist = colorDistance(cells[cy][cx].rgb, cells[ny][nx].rgb)
+          // 使用格内均值 RGB 做合并判断，而非拼豆色号 RGB
+          // 避免因映射到不同但感知相近的色号而阻止合并
+          const dist = colorDistance(cells[cy][cx].meanRgb, cells[ny][nx].meanRgb)
           if (dist < oklabThreshold) {
             visited[ny][nx] = true; queue.push([nx, ny])
           }
@@ -406,7 +463,7 @@ export function mergeSimilarRegions(
         }
         const targetColor = palette.find((c) => c.code === bestCode)!
         for (const [rx, ry] of region) {
-          result[ry][rx] = { beadCode: bestCode, rgb: targetColor.rgb }
+          result[ry][rx] = { beadCode: bestCode, rgb: targetColor.rgb, meanRgb: cells[ry][rx].meanRgb }
         }
       }
     }
