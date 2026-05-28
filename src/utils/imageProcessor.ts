@@ -1,12 +1,12 @@
 import type { BeadColor, CellData, PixelGrid, ColorCount } from '../types'
 
-// ── CIE Lab 色彩空间转换 ──────────────────────────
+// ── OKLab 色彩空间转换 ────────────────────────────
 
 /**
- * sRGB → CIE Lab (D65 标准光源)
- * Lab 是感知均匀色彩空间，欧氏距离比 RGB 空间更接近人眼感受
+ * sRGB → OKLab (Björn Ottosson, 2020)
+ * 感知均匀性优于 CIE Lab，蓝色区域无偏差，纯矩阵运算更简洁
  */
-function rgbToLab(rgb: [number, number, number]): [number, number, number] {
+function rgbToOklab(rgb: [number, number, number]): [number, number, number] {
   // Step 1: sRGB → Linear RGB
   const toLinear = (c: number): number => {
     const v = c / 255
@@ -16,67 +16,68 @@ function rgbToLab(rgb: [number, number, number]): [number, number, number] {
   const g = toLinear(rgb[1])
   const b_ = toLinear(rgb[2])
 
-  // Step 2: Linear RGB → XYZ (D65)
-  const x = r * 0.4124564 + g * 0.3575761 + b_ * 0.1804375
-  const y = r * 0.2126729 + g * 0.7151522 + b_ * 0.0721750
-  const z = r * 0.0193339 + g * 0.1191920 + b_ * 0.9503041
+  // Step 2: Linear RGB → LMS
+  const l = r * 0.4122214708 + g * 0.5363325363 + b_ * 0.0514459929
+  const m = r * 0.2119034982 + g * 0.6806995451 + b_ * 0.1073969566
+  const s = r * 0.0883024619 + g * 0.2817188376 + b_ * 0.6299787005
 
-  // Step 3: XYZ → Lab (D65 reference white)
-  const refX = 0.95047; const refY = 1.00000; const refZ = 1.08883
-  const f = (t: number): number =>
-    t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116
+  // Step 3: cube-root LMS
+  const l_ = Math.cbrt(l)
+  const m_ = Math.cbrt(m)
+  const s_ = Math.cbrt(s)
 
-  const L = 116 * f(y / refY) - 16
-  const a = 500 * (f(x / refX) - f(y / refY))
-  const b = 200 * (f(y / refY) - f(z / refZ))
+  // Step 4: LMS' → OKLab
+  const L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
+  const a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
+  const b = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
 
   return [L, a, b]
 }
 
-/** 色板 Lab 值缓存 */
-let _labCache: [number, number, number][] | null = null
-let _labCacheKey = ''
+/** 色板 OKLab 值缓存 */
+let _oklabCache: [number, number, number][] | null = null
+let _oklabCacheKey = ''
 
-function getPaletteLab(palette: BeadColor[]): [number, number, number][] {
+function getPaletteOklab(palette: BeadColor[]): [number, number, number][] {
   const key = palette.map((c) => c.code).join(',')
-  if (key !== _labCacheKey) {
-    _labCache = palette.map((c) => rgbToLab(c.rgb))
-    _labCacheKey = key
+  if (key !== _oklabCacheKey) {
+    _oklabCache = palette.map((c) => rgbToOklab(c.rgb))
+    _oklabCacheKey = key
   }
-  return _labCache!
+  return _oklabCache!
 }
 
 // ── 色差计算 ──────────────────────────────────────
 
-/** Lab 空间欧氏距离（CIE76，感知均匀） */
+/** OKLab 空间欧氏距离（感知均匀，优于 CIE76） */
 function colorDistance(a: [number, number, number], b: [number, number, number]): number {
-  const la = rgbToLab(a)
-  const lb = rgbToLab(b)
-  const dl = la[0] - lb[0]
-  const da = la[1] - lb[1]
-  const db = la[2] - lb[2]
+  const oa = rgbToOklab(a)
+  const ob = rgbToOklab(b)
+  const dl = oa[0] - ob[0]
+  const da = oa[1] - ob[1]
+  const db = oa[2] - ob[2]
   return Math.sqrt(dl * dl + da * da + db * db)
 }
 
-/** Lab 空间欧氏距离（直接传入 Lab 值，避免重复转换） */
-function labDistance(
-  lab: [number, number, number],
-  lab2: [number, number, number]
+/** OKLab 空间欧氏距离（直接传入 OKLab 值，避免重复转换） */
+function oklabDistance(
+  oklab: [number, number, number],
+  oklab2: [number, number, number]
 ): number {
-  const dl = lab[0] - lab2[0]
-  const da = lab[1] - lab2[1]
-  const db = lab[2] - lab2[2]
+  const dl = oklab[0] - oklab2[0]
+  const da = oklab[1] - oklab2[1]
+  const db = oklab[2] - oklab2[2]
   return Math.sqrt(dl * dl + da * da + db * db)
 }
 
-/** 在色板中查找最近似颜色（Lab 欧氏距离） */
+/** 在色板中查找最近似颜色（OKLab 欧氏距离） */
 export function findNearestColor(rgb: [number, number, number], palette: BeadColor[]): BeadColor {
-  const lab = rgbToLab(rgb)
-  const paletteLab = getPaletteLab(palette)
+  const oklab = rgbToOklab(rgb)
+  const paletteOklab = getPaletteOklab(palette)
   let bestIdx = 0
   let bestDist = Infinity
-  for (let i = 0; i < paletteLab.length; i++) {
-    const d = labDistance(lab, paletteLab[i])
+  for (let i = 0; i < paletteOklab.length; i++) {
+    const d = oklabDistance(oklab, paletteOklab[i])
     if (d < bestDist) {
       bestDist = d
       bestIdx = i
@@ -178,7 +179,7 @@ function pixelateImage(
         b = clamp(b + err[2])
       }
 
-      // CIEDE2000 映射到最近拼豆色
+      // OKLab 映射到最近拼豆色
       const nearest = findNearestColor([r, g, b], palette)
       row.push({ beadCode: nearest.code, rgb: nearest.rgb })
 
