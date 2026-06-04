@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ziyue": "vite --mode ziyue",
+    "dev:gf": "vite --mode gf",
     "build": "tsc -b && vite build",
+    "build:ziyue": "tsc -b && vite build --mode ziyue",
+    "build:gf": "tsc -b && vite build --mode gf",
     "lint": "eslint .",
     "preview": "vite preview"
   },

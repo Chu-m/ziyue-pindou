@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概况
 
-**紫悦拼豆** — 图片转拼豆像素图纸的纯前端 Web 工具。用户上传图片后，自动进行网格化采样、主导色提取、拼豆色板映射，生成像素网格图纸并支持 PNG 导出。
+**紫悦拼豆** — 图片转拼豆像素图纸的纯前端 Web 工具。通过 `.env` 文件区分品牌环境（ziyue / gf），分别部署到不同域名。
+
+用户上传图片后，自动进行网格化采样、主导色提取、拼豆色板映射，生成像素网格图纸并支持 PNG 导出。
 
 ## 技术栈
 
@@ -19,29 +21,54 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 常用命令
 
 ```bash
-npm install          # 安装依赖
-npm run dev          # 启动开发服务器 (localhost:5173)
-npm run build        # 类型检查 + 生产构建
-npm run preview      # 预览生产构建
-npx tsc -b --noEmit  # 仅类型检查
+npm install              # 安装依赖
+npm run dev              # 启动开发服务器（默认模式）
+npm run dev:ziyue        # 启动开发服务器（紫悦拼豆）
+npm run dev:gf           # 启动开发服务器（gf拼豆）
+npm run build            # 默认构建
+npm run build:ziyue      # 构建紫悦拼豆
+npm run build:gf         # 构建 gf拼豆
+npm run preview          # 预览生产构建
+npx tsc -b --noEmit      # 仅类型检查
 ```
+
+### 环境变量
+
+项目通过 `.env.<mode>` 文件区分品牌环境：
+
+| 变量 | `.env.ziyue` | `.env.gf` |
+|------|-------------|-----------|
+| `VITE_APP_TITLE` | 紫悦拼豆 | gf拼豆 |
+| `VITE_CLOUDFLARE_PROJECT` | ziyue-pindou | gf-pindou |
+| `VITE_EXPORT_FILENAME` | ziyue-pindou-blueprint | gf-pindou-blueprint |
 
 ## 部署流程
 
-项目部署在 Cloudflare Pages，使用 wrangler CLI 推送。账号已认证（ID: `fce50c7ed53d046725b092b347bc6ce2`），项目名 `ziyue-pindou`。
+项目部署在 Cloudflare Pages，使用 wrangler CLI 推送。账号已认证（ID: `fce50c7ed53d046725b092b347bc6ce2`）。
 
-### 一键部署命令
+### 双环境部署
+
+| 环境 | Cloudflare 项目 | 预览 URL |
+|------|----------------|-----------|
+| ziyue（紫悦拼豆） | `ziyue-pindou` | `https://<hash>.ziyue-pindou.pages.dev` |
+| gf（gf拼豆） | `gf-pindou` | `https://<hash>.gf-pindou.pages.dev` |
+
+### 部署命令
 
 ```bash
-npm run build && npx wrangler pages deploy dist --project-name ziyue-pindou
+# 部署紫悦拼豆
+npm run build:ziyue && npx wrangler pages deploy dist --project-name ziyue-pindou
+
+# 部署 gf拼豆
+npm run build:gf && npx wrangler pages deploy dist --project-name gf-pindou
 ```
 
 ### 部署步骤说明
 
-1. `npm run build` — 类型检查 + Vite 生产构建，产物输出到 `dist/`
-2. `npx wrangler pages deploy dist --project-name ziyue-pindou` — 推送 `dist/` 到 Cloudflare Pages
+1. `npm run build:<env>` — 类型检查 + 按环境模式 Vite 生产构建，产物输出到 `dist/`
+2. `npx wrangler pages deploy dist --project-name <project>` — 推送 `dist/` 到对应 Cloudflare Pages 项目
 
-部署完成后 wrangler 会输出预览 URL（如 `https://<hash>.ziyue-pindou.pages.dev`），自定义域名由 Cloudflare 控制台管理。
+部署完成后 wrangler 会输出预览 URL，自定义域名由 Cloudflare 控制台管理。
 
 ### Git 提交规范
 

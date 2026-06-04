@@ -90,7 +90,7 @@ export default function App() {
     renderExportGrid(grid, exportCanvasRef.current, 24, exportOpts)
     // requestAnimationFrame 确保渲染完成后再导出
     requestAnimationFrame(() => {
-      downloadPNG(exportCanvasRef.current!, 'ziyue-pindou-blueprint.png')
+      downloadPNG(exportCanvasRef.current!, `${import.meta.env.VITE_EXPORT_FILENAME}.png`)
     })
   }, [grid, exportShowGridLines, exportShowColorCodes, gridLineOpts])
 
@@ -98,7 +98,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-800">紫悦拼豆</h1>
+          <h1 className="text-2xl font-bold text-gray-800">{import.meta.env.VITE_APP_TITLE}</h1>
           <p className="text-sm text-gray-500">上传图片，自动生成拼豆像素图纸</p>
         </div>
       </header>

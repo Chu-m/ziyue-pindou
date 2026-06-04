@@ -1,0 +1,4 @@
+VITE_APP_TITLE=gf拼豆
+VITE_APP_SUBTITLE=图片转拼豆图纸
+VITE_CLOUDFLARE_PROJECT=gf-pindou
+VITE_EXPORT_FILENAME=gf-pindou-blueprint
